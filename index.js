@@ -102,7 +102,7 @@ app.post('/admin/migrate', (req, res) => {
       if (!vals?.length) return;
       const placeholders = cols.map(() => '?').join(',');
       const stmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(',')}) VALUES (${placeholders})`);
-      for (const row of vals) stmt.run(cols.map(c => row[c] ?? null));
+      for (const row of vals) stmt.run(...cols.map(c => row[c] ?? null));
     };
 
     ins('kullanicilar', ['id','kullanici_adi','sifre_hash','ad_soyad','rol','aktif'], kullanicilar);
