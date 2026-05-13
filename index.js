@@ -2,12 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import {
   authHandlers, cariHandlers, siparisHandlers, fisHandlers,
-  faturaHandlers, cekHandlers, puantajHandlers, ekstreHandlers, aramaHandlers
+  faturaHandlers, cekHandlers, puantajHandlers, ekstreHandlers, aramaHandlers,
+  getDatabase
 } from './db/database.js';
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // ── API Key doğrulama ──────────────────────────────────────────────────────────
 const API_KEY = process.env.API_KEY;
@@ -89,6 +90,40 @@ app.post('/ekstre/getAylikCiro',           r(ekstreHandlers.getAylikCiro));
 
 // Arama
 app.post('/app/globalArama',           r(aramaHandlers.globalArama));
+
+// ── Veri Aktarımı (tek seferlik migration) ───────────────────────────────────
+app.post('/admin/migrate', (req, res) => {
+  const db = getDatabase();
+  const { kullanicilar, cariler, cari_firma_ayarlari, siparisler, fisler,
+          faturalar, cari_hareketler, isciler, puantaj, avanslar, cekler } = req.body;
+  try {
+    db.exec('PRAGMA foreign_keys = OFF');
+    const ins = (table, cols, vals) => {
+      if (!vals?.length) return;
+      const placeholders = cols.map(() => '?').join(',');
+      const stmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${cols.join(',')}) VALUES (${placeholders})`);
+      for (const row of vals) stmt.run(cols.map(c => row[c] ?? null));
+    };
+
+    ins('kullanicilar', ['id','kullanici_adi','sifre_hash','ad_soyad','rol','aktif'], kullanicilar);
+    ins('cariler', ['id','cari_kodu','firma_adi','yetkili','telefon','telefon2','mail','adres','vergi_dairesi','vergi_no','not_','aktif'], cariler);
+    ins('cari_firma_ayarlari', ['id','cari_id','firma_id','calisma_tipi','odeme_vadesi','risk_limiti'], cari_firma_ayarlari);
+    ins('siparisler', ['id','siparis_no','firma_id','cari_id','tarih','iplik_cinsi','iplik_acilimi','gelen_kg','bukum_miktari','tpm','bukum_yonu','kat_sayisi','recete_notu','istenen_termin','is_durumu','teslim_edilen_kg','fire_kg','birim_fiyat','not_'], siparisler);
+    ins('fisler', ['id','fis_no','firma_id','cari_id','siparis_id','tarih','cikan_kg','birim_fiyat','tutar','irsaliye_no','faturaya_donustu','fatura_id','not_'], fisler);
+    ins('faturalar', ['id','fatura_no','firma_id','cari_id','fatura_tarihi','toplam_kg','ara_toplam','kdv_orani','kdv_tutari','genel_toplam','vade_tarihi','odeme_durumu','tahsil_edilen','not_'], faturalar);
+    ins('cari_hareketler', ['id','firma_id','cari_id','tarih','islem_tipi','belge_no','aciklama','borc','alacak','kg','vade_tarihi','odeme_sekli','referans_id','referans_tip','not_'], cari_hareketler);
+    ins('isciler', ['id','firma_id','ad','soyad','giris_tarihi','baz_maas','yol_ucreti','yemek_ucreti','izin_hakki','aktif','not_'], isciler);
+    ins('puantaj', ['id','isci_id','firma_id','yil','ay','devam_json','mesai_saat','mesai_ucret','banka_odeme','nakit_odeme','notlar'], puantaj);
+    ins('avanslar', ['id','isci_id','firma_id','tarih','tutar','aciklama','not_'], avanslar);
+    ins('cekler', ['id','cek_no','firma_id','cari_id','alinma_tarihi','vade_tarihi','tutar','banka','sube','kesideci','durum','not_'], cekler);
+
+    db.exec('PRAGMA foreign_keys = ON');
+    res.json({ success: true });
+  } catch (e) {
+    db.exec('PRAGMA foreign_keys = ON');
+    res.status(500).json({ error: e.message });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Erdem Takip Sunucu ayakta: http://localhost:${PORT}`));
